@@ -1,0 +1,16 @@
+name: "Convert repository action"
+description: "Get started with Python Container actions"
+author: "Aurelien ROY"
+inputs:
+  repository:
+    description: "Repository to convert"
+    required: true
+  repositories:
+    description: "Repositories (YAML)"
+    required: true
+  github_token:
+    description: "Github token"
+    required: true
+runs:
+  using: "docker"
+  image: "Dockerfile"
