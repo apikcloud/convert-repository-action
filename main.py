@@ -4,7 +4,7 @@ import re
 import base64
 import shlex
 import subprocess
-import xmlrpc
+import xmlrpc.client
 import requests
 from requests.exceptions import HTTPError
 
@@ -12,7 +12,6 @@ from github import Github, Auth, InputGitTreeElement
 from github.GithubException import GithubException, UnknownObjectException
 
 REPOSITORY = os.getenv("INPUT_REPOSITORY")
-REPOSITORIES = os.getenv("INPUT_REPOSITORIES")
 GITHUB_TOKEN = os.getenv("INPUT_GITHUB_TOKEN")
 
 ODOO_HOST = os.getenv("INPUT_ODOO_HOST")
@@ -39,12 +38,10 @@ def get_last_item(string, sep="/"):
 def download(url, token):
     """Generic method to download file from ApiX database."""
 
-    headers = {"X-Api-Token": token}
-
     try:
         response = requests.get(
             url,
-            headers=headers,
+            headers={"X-Api-Token": token},
             allow_redirects=False,
             timeout=DEFAULT_TIMEOUT,
         )
@@ -53,7 +50,7 @@ def download(url, token):
         print(error)
         exit(1)
 
-    response.content
+    return response.content.decode("utf-8")
 
 
 def download_yaml():
@@ -88,8 +85,7 @@ def get_repositories(content, repo_name):
 
         return [name, [url, branch]]
 
-    data = yaml.safe_load(REPOSITORIES)
-
+    data = yaml.safe_load(content)
     res = dict(filter(lambda item: item[0] != repo_name, map(transform, data.items())))
 
     return [[key, *values] for key, values in res.items()]
@@ -117,11 +113,24 @@ def get_requirements(repo):
         return []
 
 
+def _prepare_git_tree(**kwargs):
+    return InputGitTreeElement(**kwargs)
+
+
+def _prepare_git_commit(path, sha):
+    return _prepare_git_tree(path=path, mode="160000", type="commit", sha=sha)
+
+
+def _prepare_git_blob(path, content):
+    return _prepare_git_tree(path=path, mode="100644", type="blob", content=content)
+
+
 def get_tree(items):
     g = _get_gh()
-    res, content = [], ""
-    requirements = []
+    res, requirements = [], []
+    content = ""
 
+    print("Get last commits")
     for name, url, branch_name in repositories:
         org = g.get_organization(url.split("/")[-2])
         url = url.replace(".git", "")
@@ -135,42 +144,14 @@ def get_tree(items):
         content += f'[submodule "{name}"]\n\tpath = {path}\n\turl = {url}\n'
         requirements += get_requirements(repo)
 
-        res.append(
-            InputGitTreeElement(
-                **{
-                    "path": path,
-                    "mode": "160000",
-                    "type": "commit",
-                    "sha": commit.sha,
-                }
-            )
-        )
+        res.append(_prepare_git_commit(path, commit.sha))
 
-    requirements = set(
-        filter(lambda item: item and not item.startswith("#"), requirements)
+    requirements = "\n".join(
+        set(filter(lambda item: item and not item.startswith("#"), requirements))
     )
     print("Requirements: %s" % requirements)
-    res.append(
-        InputGitTreeElement(
-            **{
-                "path": "submodules-requirements.txt",
-                "mode": "100644",
-                "type": "blob",
-                "content": "\n".join(requirements),
-            }
-        ),
-    )
-    res.insert(
-        0,
-        InputGitTreeElement(
-            **{
-                "path": ".gitmodules",
-                "mode": "100644",
-                "type": "blob",
-                "content": content,
-            }
-        ),
-    )
+    res.append(_prepare_git_blob("submodules-requirements.txt", requirements))
+    res.insert(0, _prepare_git_blob(".gitmodules", content))
 
     return res
 
@@ -180,7 +161,7 @@ if __name__ == "__main__":
     org_name, repo_name = REPOSITORY.split("/")
 
     content = download_yaml()
-    repositories = get_repositories(repo_name, content)
+    repositories = get_repositories(content, repo_name)
     tree = get_tree(repositories)
 
     g = _get_gh()
