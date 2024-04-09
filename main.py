@@ -1,18 +1,16 @@
 import os
-import xmlrpc.client
 import yaml
 import re
 import base64
-import os
 import shlex
 import subprocess
+
 from github import Github, Auth, InputGitTreeElement
 from github.GithubException import GithubException, UnknownObjectException
 
-
-REPOSITORY = os.getenv("REPOSITORY")
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-REPOSITORIES = os.getenv("REPOSITORIES")
+REPOSITORY = os.getenv("INPUT_REPOSITORY")
+REPOSITORIES = os.getenv("INPUT_REPOSITORIES")
+GITHUB_TOKEN = os.getenv("INPUT_GITHUB_TOKEN")
 
 PREFIX = "third-party"
 DEFAULT_BRANCH = "main"
