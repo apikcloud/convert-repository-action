@@ -4,6 +4,9 @@ import re
 import base64
 import shlex
 import subprocess
+import xmlrpc
+import requests
+from requests.exceptions import HTTPError
 
 from github import Github, Auth, InputGitTreeElement
 from github.GithubException import GithubException, UnknownObjectException
@@ -12,30 +15,71 @@ REPOSITORY = os.getenv("INPUT_REPOSITORY")
 REPOSITORIES = os.getenv("INPUT_REPOSITORIES")
 GITHUB_TOKEN = os.getenv("INPUT_GITHUB_TOKEN")
 
-PREFIX = "third-party"
-DEFAULT_BRANCH = "main"
-PR_BRANCH = "auto-main"
+ODOO_HOST = os.getenv("INPUT_ODOO_HOST")
+ODOO_DATABASE = os.getenv("INPUT_ODOO_DATABASE")
+ODOO_USER = os.getenv("INPUT_ODOO_USER")
+ODOO_PASSWORD = os.getenv("INPUT_ODOO_PASSWORD")
+ODOO_ID = os.getenv("INPUT_ODOO_ID")
+ODOO_TOKEN = os.getenv("INPUT_ODOO_TOKEN")
 
+PREFIX = os.getenv("INPUT_PATH", "third-party")
+DEFAULT_BRANCH = os.getenv("INPUT_BRANCH", "main")
+PR_BRANCH = os.getenv("INPUT_PR_BRANCH", "auto-main")
 
-# Set the output value by writing to the outputs in the Environment File, mimicking the behavior defined here:
-#  https://docs.github.com/en/actions/using-workflows/workflow-commands-for-github-actions#setting-an-output-parameter
-def set_github_action_output(output_name, output_value):
-    f = open(os.path.abspath(os.environ["GITHUB_OUTPUT"]), "a")
-    f.write(f"{output_name}={output_value}")
-    f.close()
+COMMON_URL = "{}/xmlrpc/2/common"
+OBJECT_URL = "{}/xmlrpc/2/object"
 
-
-# def main():
-#     my_input = os.environ["INPUT_MYINPUT"]
-#     my_output = f"Hello {my_input}"
-#     set_github_action_output("myOutput", my_output)
+DEFAULT_TIMEOUT = 30
 
 
 def get_last_item(string, sep="/"):
     return string.split(sep)[-1] if sep in string else string
 
 
-def get_repositories(repo_name):
+def download(url, token):
+    """Generic method to download file from ApiX database."""
+
+    headers = {"X-Api-Token": token}
+
+    try:
+        response = requests.get(
+            url,
+            headers=headers,
+            allow_redirects=False,
+            timeout=DEFAULT_TIMEOUT,
+        )
+        response.raise_for_status()
+    except HTTPError as error:
+        print(error)
+        exit(1)
+
+    response.content
+
+
+def download_yaml():
+    common = xmlrpc.client.ServerProxy(COMMON_URL.format(ODOO_HOST), allow_none=True)
+    uid = common.authenticate(ODOO_DATABASE, ODOO_USER, ODOO_PASSWORD, {})
+    models = xmlrpc.client.ServerProxy(OBJECT_URL.format(ODOO_HOST), allow_none=True)
+
+    fields = ["name", "repos", "repositories_url"]
+
+    database = models.execute_kw(
+        ODOO_DATABASE,
+        uid,
+        ODOO_PASSWORD,
+        "saas.database",
+        "read",
+        [int(ODOO_ID)],
+        {"fields": fields},
+    )
+    database = database[0]
+
+    print(f"Download repositories.yaml from {database['name']}.")
+
+    return download(database["repositories_url"], ODOO_TOKEN)
+
+
+def get_repositories(content, repo_name):
     def transform(items):
         # {'merges': ['origin 16.0'], 'remotes': {'origin': 'https://github.com/oca/account-analytic.git'}, 'target': 'origin 16.0'}
         name = get_last_item(items[0])
@@ -44,19 +88,11 @@ def get_repositories(repo_name):
 
         return [name, [url, branch]]
 
-    content = yaml.safe_load(REPOSITORIES)
+    data = yaml.safe_load(REPOSITORIES)
 
-    res = dict(
-        filter(lambda item: item[0] != repo_name, map(transform, content.items()))
-    )
+    res = dict(filter(lambda item: item[0] != repo_name, map(transform, data.items())))
 
     return [[key, *values] for key, values in res.items()]
-    # return res
-
-
-def add_submodule(name, url, branch):
-    # git submodule add -b master <URL> <PATH> && git commit -a && git push -u origin Production
-    _run(f"git submodule add -b {branch} {url} third-party/{name}")
 
 
 def _run(cmd, **options):
@@ -143,7 +179,8 @@ if __name__ == "__main__":
 
     org_name, repo_name = REPOSITORY.split("/")
 
-    repositories = get_repositories(repo_name)
+    content = download_yaml()
+    repositories = get_repositories(repo_name, content)
     tree = get_tree(repositories)
 
     g = _get_gh()
