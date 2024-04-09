@@ -5,11 +5,26 @@ inputs:
   repository:
     description: "Repository to convert"
     required: true
-  repositories:
-    description: "Repositories (YAML)"
+  odoo_id:
+    description: "Odoo database ID"
     required: true
   github_token:
     description: "Github token"
+    required: true
+  odoo_host:
+    description: "Odoo host"
+    required: true
+  odoo_database:
+    description: "Odoo database"
+    required: true
+  odoo_user:
+    description: "Odoo user"
+    required: true
+  odoo_password:
+    description: "Odoo password"
+    required: true
+  odoo_token:
+    description: "Odoo token"
     required: true
 runs:
   using: "docker"
