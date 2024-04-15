@@ -28,5 +28,5 @@ inputs:
     required: true
 runs:
   using: "docker"
-  # image: "Dockerfile"
-  image: 'docker://ghcr.io/apikcloud/convert-repository-action:v1'
+  image: "Dockerfile"
+  # image: 'docker://ghcr.io/apikcloud/convert-repository-action:v1'
